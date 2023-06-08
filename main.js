@@ -90,6 +90,7 @@ let audioFileMap = new Map(header.filter(v=>v.toLowerCase().startsWith("#wav")||
       v.file = seg.join(".");
     });
   }
+  audioFileNames = [...audioFileMap.values()].map(v=>v.file);
   let sampleRate = (await decodeAudio(fs.readFileSync(path.resolve(filedir, audioFileNames[0])))).sampleRate;
 
   let instruments = [...new Set(audioFileNames.map(v=>v.split(".")[0].split(separator)[0]))];
