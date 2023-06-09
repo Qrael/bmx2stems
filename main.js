@@ -2,26 +2,48 @@ import fs from "fs";
 import path from "path";
 
 import parseArgs from "minimist";
+import winston from "winston";
+
 import AudioBuffer from "audio-buffer";
 import decodeAudio from "audio-decode";
 import wav from "node-wav";
 import { createOggEncoder } from "wasm-media-encoders";
 
+const logFormat = winston.format(info => {
+    info.level = info.level.toUpperCase();
+    if (info.stack) {
+        info.message = `${info.message}\n${info.stack}`;
+    }
+    return info;
+});
+winston.add(new winston.transports.Console({
+    format: winston.format.combine(
+        logFormat(),
+        winston.format.colorize(),
+        winston.format.timestamp({
+            format: 'YYYY-MM-DD HH:mm:ss'
+        }),
+        winston.format.printf(info => `${info.timestamp} [${info.level}] ${info.message}`)
+    ),
+}));
+
 let argv = parseArgs(process.argv.slice(2));
+
+winston.level = argv.log ?? (argv.v ? "verbose" : 'info');
 
 let bmsource = argv["--"] ?? argv._[0];
 
 if (bmsource===undefined) {
-  console.log("Please provide the path to the bms file.");
+  winston.error("Please provide the path to the bms file.");
   process.exit(1);
 }
 
 let outputFormat = (`${argv.format ?? argv.f ?? "wav"}`).toLowerCase();
 if (!["wav", "ogg"].includes(outputFormat)) {
-  console.log(`Option --format must be one of "wav", "ogg".`);
+  winston.error(`Option --format must be one of "wav", "ogg".`);
   process.exit(1);
 }
-console.log(`Stems will be saved as ${outputFormat} files.`);
+winston.info(`Stems will be saved as ${outputFormat} files.`);
 
 let separatorStr = `${argv.separator ?? argv.s ?? "_"}`
 let separator = new RegExp(separatorStr);
@@ -60,7 +82,7 @@ for (let i = 0; i < bars.length; i++) {
 }
 /** Song length in number of seconds. */
 let songLength = barMeters.reduce((r, v)=>r+v*60/bpm, 0);
-console.log(`Song lasts ${songLength} seconds, with bpm ${bpm}.`)
+winston.info(`Song lasts ${songLength} seconds, with bpm ${bpm}.`)
 
 /**
  * All the audio files, mapped to the audio file ID.
@@ -101,6 +123,8 @@ let audioFileMap = new Map(header.filter(v=>v.toLowerCase().startsWith("#wav")||
     numberOfChannels: 2,
   })]));
 
+  winston.info(`There are ${instruments.length} instrument tracks for this song.`)
+
   /** All audio sequnce commands */
   let audioSeq = data.filter(v=>{
     /** Only objects on channel 01 (bgm) and x1-x6, x8-x9 (keys) should be considered */
@@ -119,7 +143,7 @@ let audioFileMap = new Map(header.filter(v=>v.toLowerCase().startsWith("#wav")||
   for (let i = 0; i < audioSeq.length; i++) {
     let bar = parseInt(audioSeq[i].split(":")[0].substring(1, 4));
     if (prevbar!=bar) {
-      console.log(`Processing bar ${bar}`);
+      winston.verbose(`Processing bar ${bar}`);
       for (let j = prevbar; j < bar; j++) {
         currentSample += Math.floor(barMeters[j]*60*sampleRate/bpm);
       }
@@ -153,7 +177,7 @@ let audioFileMap = new Map(header.filter(v=>v.toLowerCase().startsWith("#wav")||
     }
   }
 
-  console.log(`Saving ${instruments.length} stem tracks to ${outDir}...`);
+  winston.info(`Saving ${instruments.length} stem tracks to ${outDir}...`);
   let oggEncoder;
 
   if (outputFormat==="ogg") {
@@ -214,5 +238,5 @@ let audioFileMap = new Map(header.filter(v=>v.toLowerCase().startsWith("#wav")||
     if (!dirExist) fs.mkdirSync(outDir, {recursive: true});
     fs.writeFileSync(path.resolve(outDir, `${instruments[i]}.${outputFormat}`), buf);
   }
-  console.log("Done.")
+  winston.info("Done.")
 })()
