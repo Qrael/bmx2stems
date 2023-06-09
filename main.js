@@ -59,7 +59,7 @@ let outDir = path.resolve(`${argv.outDir ?? argv.o ?? path.resolve(filedir, "ste
 let sections = src.split("*---------------------- HEADER FIELD")[1].split("*---------------------- MAIN DATA FIELD");
 let header = sections[0].split(/\r?\n/g);
 let bars = sections[1].split(/(?:\r?\n){2,}/g).filter(v=>!!v).map(v=>v.split(/\r?\n/g));
-bars.sort((a,b)=>parseInt(a[0].match(/\#(\d\d\d)\d\d:/)[1]) - parseInt(b[0].match(/\#(\d\d\d)\d\d/)[1]));
+bars.sort((a,b)=>parseInt(a[0].match(/\#(\d\d\d)[a-zA-Z0-9]{2}:/)[1]) - parseInt(b[0].match(/\#(\d\d\d)[a-zA-Z0-9]{2}/)[1]));
 let data = bars.flat(1);
 
 /**
@@ -139,6 +139,7 @@ let audioFileMap = new Map(header.filter(v=>v.toLowerCase().startsWith("#wav")||
 
   /** Current bar's starting timestamp, in samples */
   let currentSample = 0;
+  /** Previous bar number */
   let prevbar = 0;
   for (let i = 0; i < audioSeq.length; i++) {
     let bar = parseInt(audioSeq[i].split(":")[0].substring(1, 4));
@@ -156,12 +157,16 @@ let audioFileMap = new Map(header.filter(v=>v.toLowerCase().startsWith("#wav")||
     // console.log(`Beat length: ${beatLength}`)
     for (let j = 0; j < divide; j++) {
       let audioId = arrange.substring(j*2, j*2+2);
-      if (audioId === "00") continue;
+      if (audioId === "0" || audioId === "00") continue;
       // console.log(audioId);
 
 
-      /** Process audio sample and place at correct position */
+      /** Process audio sample */
       let audio = audioFileMap.get(audioId);
+      if (audio === undefined) {
+        winston.warn(`Audio file id ${audioId} definition not found. Skipping.`);
+        continue;
+      }
       let decodedAudio = await decodeAudio(audio.fileBuf);
       let daLeft = decodedAudio.getChannelData(0);
       let daRight = decodedAudio.getChannelData(1);
