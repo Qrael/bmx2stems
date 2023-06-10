@@ -1,9 +1,15 @@
 # bmx2stems: BMS stem/multitrack extractor
 This script renders bms chart formatted songs into a stem pack, with each instrument in their own audio track.
 
-It relies on the samples that comes with the chart being named with their instruments. Therefore charts like [B.B.K.K.B.K.K.](https://manbow.nothing.sh/event/event.cgi?action=More_def&num=152&event=88) wouldn't work with this script without extensive renaming of the samples.
+It relies on the samples that come with the chart being named with their instruments. Therefore charts like [B.B.K.K.B.K.K.](https://manbow.nothing.sh/event/event.cgi?action=More_def&num=152&event=88) wouldn't work with this script without extensive renaming of the samples.
 
 Currently only songs with or without bpm change but not stops are supported.
+
+## Usage
+First install the dependencies by
+```sh
+npm install
+```
 
 Use this script by having .bms file and their supporting audio files in the same directory,
 then providing the .bms file path to the script with:
@@ -19,7 +25,7 @@ Available options:
   and `"\s\#|\s?\(|\s[A-G]\#?\d"` for [GOODTEK](https://manbow.nothing.sh/event/event.cgi?action=More_def&num=83&event=104).
 * `-o`, `--outDir`: output directory. Default `stems/` under the same directory as the .bms file.
 * `--log`: log level, `error`, `warn`, `info`, `verbose`. Default `info`.
-* `-v`: equivalent to `--log verbose`.
+* `-v`, `--verbose`: equivalent to `--log verbose`.
 
 ## Test suite
 * [立秋 - 竹](https://manbow.nothing.sh/event/event.cgi?action=More_def&num=365&event=133) 

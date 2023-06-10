@@ -29,7 +29,7 @@ winston.add(new winston.transports.Console({
 
 let argv = parseArgs(process.argv.slice(2));
 
-winston.level = argv.log ?? (argv.v ? "verbose" : 'info');
+winston.level = argv.log ?? (argv.v || argv.verbose ? "verbose" : 'info');
 
 let bmsource = argv["--"] ?? argv._[0];
 
