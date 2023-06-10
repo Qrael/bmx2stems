@@ -354,7 +354,12 @@ let audioFileMap = new Map(header.filter(v=>v.toLowerCase().startsWith("#wav")||
       // winston.debug(`Bar ${bar} beat ${j/divide*barMeters[bar]} (${barBeatSample}) for sound ${audioId} (${audio.file})`)
       let decodedAudio = await decodeAudio(audio.fileBuf);
       let daLeft = decodedAudio.getChannelData(0);
-      let daRight = decodedAudio.getChannelData(1);
+      let daRight;
+      if (decodedAudio.numberOfChannels<2) {
+        winston.warn(`Audio file ${audio.file} is mono while the output will be stereo.`);
+        daRight = daLeft;
+      }
+      else daRight = decodedAudio.getChannelData(1);
       let stemTrack = stemSplits.get(audio.inst);
       let left = stemTrack.getChannelData(0);
       let right = stemTrack.getChannelData(1);

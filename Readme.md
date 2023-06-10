@@ -30,6 +30,8 @@ Available options:
   * bpm changes on channels 03 and 08
   * has stops on channel 09
   * if-else blocks with randomness 1
+* [DOT96 - MAKE IT FUNKY NOW](https://manbow.nothing.sh/event/event.cgi?action=More_def&num=294&event=116)
+  * has mono channel samples
 
 ## References
 * [BMS command memo (draft)](https://hitkey.nekokan.dyndns.info/cmds.htm)
