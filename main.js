@@ -10,23 +10,24 @@ import wav from "node-wav";
 import { createOggEncoder } from "wasm-media-encoders";
 
 const logFormat = winston.format(info => {
-    info.level = info.level.toUpperCase();
-    if (info.stack) {
-        info.message = `${info.message}\n${info.stack}`;
-    }
-    return info;
+  info.level = info.level.toUpperCase();
+  if (info.stack) {
+    info.message = `${info.message}\n${info.stack}`;
+  }
+  return info;
 });
 winston.add(new winston.transports.Console({
-    format: winston.format.combine(
-        logFormat(),
-        winston.format.colorize(),
-        winston.format.timestamp({
-            format: 'YYYY-MM-DD HH:mm:ss'
-        }),
-        winston.format.printf(info => `${info.timestamp} [${info.level}] ${info.message}`)
-    ),
+  format: winston.format.combine(
+    logFormat(),
+    winston.format.colorize(),
+    winston.format.timestamp({
+      format: 'YYYY-MM-DD HH:mm:ss'
+    }),
+    winston.format.printf(info => `${info.timestamp} [${info.level}] ${info.message}`)
+  ),
 }));
 
+/** Parse arguments */
 let argv = parseArgs(process.argv.slice(2));
 
 winston.level = argv.log ?? (argv.v || argv.verbose ? "verbose" : 'info');
@@ -293,7 +294,14 @@ let audioFileMap = new Map(header.filter(v=>v.toLowerCase().startsWith("#wav")||
       currentSample += barBeatSample;
       /** If bars are skipped, calculate them */
       for (let j = prevbar+1; j < bar; j++) {
-        currentSample += Math.floor(barMeters[j]*60*sampleRate/currentBpm);
+        let prevBeat = 0;
+        let skippedBpmChanges = bpmChanges.filter(v=>v[0]==j);
+        for (let k = 0; k < skippedBpmChanges.length; k++) {
+          currentSample += barMeters[j]*(skippedBpmChanges[k][1]-prevBeat)*60*sampleRate/currentBpm;
+          prevBeat = skippedBpmChanges[k][1];
+          currentBpm = skippedBpmChanges[k][2];
+        }
+        currentSample += Math.floor(barMeters[j]*(1-prevBeat)*60*sampleRate/currentBpm);
       }
       prevbar = bar;
       let prevChanges = bpmChanges.filter(v=>v[0]<bar);
@@ -326,29 +334,20 @@ let audioFileMap = new Map(header.filter(v=>v.toLowerCase().startsWith("#wav")||
         continue;
       }
 
-      if ((barBpmChange[bpmChangeIdx]!==undefined ? barBpmChange[bpmChangeIdx]?.[1]*barMeters[bar] : j+1) <= j) {
+      while (barBpmChange[bpmChangeIdx]!==undefined && barBpmChange[bpmChangeIdx][1] < j/divide) {
         /**
-         * There is a bpm change on or before this beat
+         * There were bpm changes on or before this beat
          * Add the time up between previous beat and this beat
          */
-        // winston.debug(currentBpm)
-        // winston.debug(barBpmChange[bpmChangeIdx])
         barBeatSample += barMeters[bar]*(barBpmChange[bpmChangeIdx][1]-prevBeat)*60*sampleRate/currentBpm;
-        barBeatSample += barMeters[bar]*(j/divide-barBpmChange[bpmChangeIdx][1])*60*sampleRate/barBpmChange[bpmChangeIdx][2];
-        // if (!barBeatSample) winston.debug(`${barMeters[bar]}, ${j/divide}, ${prevBeat}, ${currentBpm}`)
+        prevBeat = barBpmChange[bpmChangeIdx][1];
         currentBpm = barBpmChange[bpmChangeIdx][2];
-        // winston.debug(currentBpm)
         bpmChangeIdx++;
-      } else {
-        /**
-         * Current bar has no (more) bpm change
-         */
-        barBeatSample += barMeters[bar]*(j/divide-prevBeat)*60*sampleRate/currentBpm;
-        // if (!barBeatSample) winston.debug(`${barMeters[bar]}, ${j/divide}, ${prevBeat}, ${currentBpm}`)
       }
-      prevBeat = j/divide;
+      barBeatSample += barMeters[bar]*(j/divide-prevBeat)*60*sampleRate/currentBpm;
+      // winston.debug(`Beat ${j/divide-prevBeat} bpm ${currentBpm}`)
       // winston.debug(barMeters[bar])
-      // winston.debug(j/divide-prevBeat)
+      prevBeat = j/divide;
 
       /** Process audio sample */
       // winston.debug(`Bar ${bar} beat ${j/divide*barMeters[bar]} (${barBeatSample}) for sound ${audioId} (${audio.file})`)
@@ -383,7 +382,7 @@ let audioFileMap = new Map(header.filter(v=>v.toLowerCase().startsWith("#wav")||
         right = newTrack.getChannelData(1);
       }
 
-      // winston.debug(`Audio sample lasts for ${decodedAudio.length} samples`);
+      // winston.debug(`Audio sample ${audioId} at bar ${bar} beat ${j/divide} bpm ${currentBpm} (${audio.file})`);
       // winston.debug(`At beat ${Math.floor(currentSample + barBeatSample)}`);
 
       /** Copy the sample to inst track */
