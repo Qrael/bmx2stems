@@ -3,7 +3,7 @@ This script renders bms chart formatted songs into a stem pack, with each instru
 
 It relies on the samples that come with the chart being named with their instruments. Therefore charts like [B.B.K.K.B.K.K.](https://manbow.nothing.sh/event/event.cgi?action=More_def&num=152&event=88) wouldn't work with this script without extensive renaming of the samples.
 
-Currently only songs with or without bpm change but not stops are supported.
+Currently songs with bpm change are supported, and those with randomness more than 1 are not supported.
 
 ## Usage
 First install the dependencies by

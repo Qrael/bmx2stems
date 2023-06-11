@@ -126,15 +126,27 @@ let bpmMap = new Map(bpms.map(v=>[v.substring(4,6), parseFloat(v.split(" ")[1])]
 let bpmSeq = data.filter(v=>/\#\d\d\d0[38]/.test(v)) ?? [];
 let bpmChanges = [];
 
+/**
+ * Consider stops on channel 09.
+ * 
+ * For stop and sound/bpm change on the same beat,
+ * sound/bpm change comes first, then stop comes after.
+ */
+let stopMap = new Map(header.filter(v=>/\#stop[\d\w]{2}/i.test(v)).map(v=>[v.substring(5,7), parseInt(v.split(" ")[1])]));
+let stopSeq = data.filter(v=>/\#\d\d\d09/.test(v));
+let stops = [];
+
 if (allRandoms?.length) {
   for (let i = 0; i < allRandoms.length; i++) {
     if (allRandoms[i].randomness === 1) {
       /** This random block has only one path, why is it in the block then??? */
       bpmSeq = bpmSeq.concat(allRandoms[i].if[0].content.filter(v=>/\#\d\d\d0[38]/.test(v)) ?? []);
+      stopSeq = stopSeq.concat(allRandoms[i].if[0].content.filter(v=>/\#\d\d\d09/.test(v)) ?? []);
     }
   }
 }
 
+/** Parse bpm changes for song length calculation */
 for (let i = 0; i < bpmSeq.length; i++) {
   let bar = parseInt(bpmSeq[i].substring(1,4));
   let channel = bpmSeq[i].substring(4,6);
@@ -173,6 +185,39 @@ bpmChanges.sort((a,b)=>{
   else return a[0]-b[0];
 })
 
+/** Parse stops for song length calculation */
+for (let i = 0; i < stopSeq.length; i++) {
+  let bar = parseInt(stopSeq[i].substring(1,4));
+  let arrange = stopSeq[i].split(":")[1];
+  if (arrange.length%2) {
+    winston.warn(`Command has odd-lengthed object sequence: \n${stopSeq[i]}`)
+  }
+  let divide = Math.floor(arrange.length/2);
+  for (let j = 0; j < divide; j++) {
+    let stopId = arrange.substring(j*2, j*2+2);
+    if (stopId === "0" || stopId==="00") continue;
+    let stopBeats = stopMap.get(stopId);
+    if (stopBeats===undefined) {
+      winston.warn(`Stop id ${stopId} definition not found. Skipping.`);
+      winston.debug(stopSeq[i])
+      continue;
+    }
+    /**
+     * The unit for the stop definition is a 192nd note.
+     * Calucate the stop as:
+     * stopBeats/192*4*60/currentBpm = stopLength in seconds
+     */
+    let bpmChange = bpmChanges.filter(v=>v[0]<bar || v[0]==bar && v[1]<=j/divide);
+    let stopLength = stopBeats*1.25/bpmChange[bpmChange.length-1][2];
+    stops.push([bar, j/divide, stopLength]);
+  }
+}
+
+stops.sort((a,b)=>{
+  if (a[0]==b[0]) return a[1]-b[1];
+  else return a[0]-b[0];
+})
+
 /** Song length in number of seconds. */
 let songLength = 0;
 if (bpmChanges.length>1) {
@@ -203,6 +248,13 @@ if (bpmChanges.length>1) {
     }
   }
 } else songLength = barMeters.reduce((r, v)=>r+v*60/bpmChanges[0][2], 0);
+for (let i = 0; i < stops.length; i++) {
+  if (stops[i][2]<0) {
+    winston.warn(`Stop length is negative. Skipping.\n${stops}`)
+    continue;
+  }
+  songLength += stops[i][2];
+}
 
 winston.info(`Song lasts ${songLength} seconds, with bpm ${bpmChanges[0][2]}.`)
 if (bpmChanges.length>1) {
@@ -272,6 +324,8 @@ let audioFileMap = new Map(header.filter(v=>v.toLowerCase().startsWith("#wav")||
   let barBeatSample = 0;
   /** Current bar's bpm change list index */
   let bpmChangeIdx = 0;
+  /** Current bar's stop list index */
+  let barStopIdx = 0;
   let prevBarBpm = bpm;
   let currentBpm = bpm;
   let prevBeat = 0;
@@ -303,6 +357,10 @@ let audioFileMap = new Map(header.filter(v=>v.toLowerCase().startsWith("#wav")||
         }
         currentSample += Math.floor(barMeters[j]*(1-prevBeat)*60*sampleRate/currentBpm);
       }
+      let prevStops = stops.filter(v=>v[0]>prevbar&&v[0]<bar);
+      for (let j = 0; j < prevStops.length; j++) {
+        currentSample += Math.floor(prevStops[j][2]*sampleRate);
+      }
       prevbar = bar;
       let prevChanges = bpmChanges.filter(v=>v[0]<bar);
       if (prevChanges.length) {
@@ -317,9 +375,11 @@ let audioFileMap = new Map(header.filter(v=>v.toLowerCase().startsWith("#wav")||
       currentBpm = prevBarBpm;
     }
     bpmChangeIdx = 0;
+    barStopIdx = 0;
     barBeatSample = 0;
     prevBeat = 0;
     let barBpmChange = bpmChanges.filter(v=>v[0]==bar);
+    let barStops = stops.filter(v=>v[0]==bar);
 
 
     // winston.debug(`Base BPM: ${bpm}, current BPM: ${currentBpm}`)
@@ -332,6 +392,15 @@ let audioFileMap = new Map(header.filter(v=>v.toLowerCase().startsWith("#wav")||
       if (audio === undefined) {
         winston.warn(`Audio file id ${audioId} definition not found. Skipping.`);
         continue;
+      }
+
+      while (barStops[barStopIdx]!==undefined && barStops[barStopIdx][1] < j/divide) {
+        /**
+         * There are stops before this beat
+         * Add the stops before it
+         */
+        barBeatSample += barStops[barStopIdx][2]*sampleRate;
+        barStopIdx++;
       }
 
       while (barBpmChange[bpmChangeIdx]!==undefined && barBpmChange[bpmChangeIdx][1] < j/divide) {
@@ -391,6 +460,12 @@ let audioFileMap = new Map(header.filter(v=>v.toLowerCase().startsWith("#wav")||
         right[Math.floor(currentSample + barBeatSample) + k]+=daRight[k];
       }
 
+      /** Process the stops on the same beat */
+      while (barStops[barStopIdx]?.[1] == j/divide) {
+        barBeatSample += barStops[barStopIdx]?.[2]*sampleRate,
+        barStopIdx++;
+      }
+
       // winston.debug(`Now bpm: ${currentBpm}`)
     }
 
@@ -399,6 +474,9 @@ let audioFileMap = new Map(header.filter(v=>v.toLowerCase().startsWith("#wav")||
       barBeatSample += barMeters[bar]*(barBpmChange[j][1]-prevBeat)*60*sampleRate/currentBpm;
       prevBeat = barBpmChange[j][1];
       currentBpm = barBpmChange[j][2];
+    }
+    for (let j = barStopIdx; j < barStops.length; j++) {
+      barBeatSample += barStops[j][2]*sampleRate;
     }
     barBeatSample += barMeters[bar]*(1-prevBeat)*60*sampleRate/currentBpm;
   }
